@@ -1,0 +1,112 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace NetworkModel.Pages
+{
+    public class IndexModel : PageModel
+    {
+        private readonly ILogger<IndexModel> _logger;
+        private readonly Random rnd = new Random();
+        private const int Count = 1000;
+        public Node[] Nodes = new Node[Count+1];
+        public List<Edges> Edges = new List<Edges>();
+
+        public IndexModel(ILogger<IndexModel> logger)
+        {
+            _logger = logger;
+        }
+
+        public void OnGet()
+        {
+            var distances = new Distance[Count*Count];
+            var zeroDis = new List<Distance>();
+
+            for (int i = 1; i < Nodes.Length; i++)
+            {
+                Nodes[i].id = rnd.Next();
+            }
+            Nodes[0].id = (int)Nodes.Select(x => x.id).Average(); ;
+            //var minIdNode =Nodes.Select(x => x.id).Min();
+
+            for (int x = 1; x < Nodes.Length; x++)
+            {
+                zeroDis.Add(new Distance { First = Nodes[0].id, Second = Nodes[x].id, Dis = Nodes[0].id ^ Nodes[x].id });
+                //for(int y = 0; y < Nodes.Length; y++)
+                //{
+                //    distances[y + (x * Count)].First = Nodes[x].id;
+                //    distances[y + (x * Count)].Second = Nodes[y].id;
+                //    distances[y + (x * Count)].Dis = Nodes[x].id & Nodes[y].id;
+                //}
+            }
+            zeroDis.Sort(new MyComparer());
+            var level = new List<Distance>();
+            level.Add(zeroDis.Count > 0 ? zeroDis[0] : new Distance());
+            Edges.Add(new Pages.Edges { from = zeroDis[0].Second, to = Nodes[0].id });
+            zeroDis.RemoveAt(0);
+            level.Add(zeroDis.Count > 0 ? zeroDis[0] : new Distance());
+            Edges.Add(new Pages.Edges { from = zeroDis[0].Second, to = Nodes[0].id });
+            zeroDis.RemoveAt(0);
+
+            while (zeroDis.Count > 0)
+            {
+                Edges.Add(new Pages.Edges { from = zeroDis[0].Second, to = level[0].Second });
+                level.Add(zeroDis[0]);
+                zeroDis.RemoveAt(0);
+                if(zeroDis.Count > 0)
+                {
+                    Edges.Add(new Pages.Edges { from = zeroDis[0].Second, to = level[0].Second });
+                    level.Add(zeroDis[0]);
+                    zeroDis.RemoveAt(0);
+                }
+                level.RemoveAt(0);
+            }
+            //for (int i = 0; i < Nodes.Length; i++)
+            //{
+            //    var dists = distances.Where(d => d.First == Nodes[i].id).ToArray();
+            //    Array.Sort(dists, new MyComparer());
+            //    var near = dists.Skip(1).Take(2);
+            //    var zeroNear = zeroDis.Where(x => near.Select(y => y.Second).Contains(x.Second)).ToArray();
+            //    Array.Sort(zeroNear, new MyComparer());
+            //    var firstZero = zeroNear.FirstOrDefault();
+            //    Nodes[i].InBetween = firstZero.Second;
+            //    Edges.Add(new Edges { from = Nodes[i].id, to = firstZero.Second });
+            //}
+        }
+    }
+    public struct Node  
+    {
+        public int id { get; set; }
+        [JsonIgnore]
+        public int InBetween { get; set; }
+        public string label => id.ToString();
+    }
+    public struct Distance
+    {
+        public int First { get; set; }
+        public int Second { get; set; }
+        public int Dis { get; set; }
+    }
+    public struct Edges
+    {
+        public int from { get; set; }
+        public int to { get; set; }
+    }
+
+    public class MyComparer : IComparer<Distance>
+    {
+        int IComparer<Distance>.Compare([AllowNull] Distance x, [AllowNull] Distance y)
+        {
+            if (x.Dis > y.Dis) return 1;
+            else if (x.Dis < y.Dis) return -1;
+            else return 0;
+        }
+    }
+}

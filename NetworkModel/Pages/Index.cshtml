@@ -1,0 +1,191 @@
+﻿@page
+@using Newtonsoft.Json;
+@model IndexModel
+@{
+    ViewData["Title"] = "Home page";
+}
+<style>
+    #mynetwork {
+        width: 100%;
+        height: 800px;
+        border: 1px solid lightgray;
+    }
+    .menu-body {
+        position: absolute;
+        top: 0;
+        left: 0;
+        display: none;
+    }
+</style>
+<div class="text-center body">
+    <h4 class="float-left p-1">Performance: <span>@Model.Performance</span> s</h4>
+    <div id="mynetwork"></div>
+    <div id="menu-body" class="card">
+        <div class="card-body">
+            <h4 id="selectedNodeLable" class="float-left">Selected: <span></span></h4>
+            <button id="menu-regions" class="btn btn-primary float-right m-1" data-nodeid="0">Regions</button>
+            <button id="menu-distances" class="btn btn-success float-right m-1" data-nodeid="0">Distances</button>
+            <button id="menu-delete" class="btn btn-danger float-right m-1" data-nodeid="0">Delete</button>
+        </div>
+    </div>
+    <div class="container">
+        <div class="row">
+            <div class="card col">
+                <div class="card-body deleted">
+                </div>
+            </div>
+            <div class="card col">
+                <div class="card-body added">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script type="text/javascript">
+    $(function () {
+        // ELEMENTS
+        var container = document.getElementById("mynetwork");
+        var deletedColumn = $('.deleted').first();
+        var addedColumn = $('.added').first();
+        var deleteButton = $('#menu-delete').first();
+        var distancesButton = $('#menu-distances').first();
+        var regionsButton = $('#menu-regions').first();
+        var selectedNodeLable = $('#selectedNodeLable').first().children('span').first();
+        var tree = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(Model.Tree.Select(x => x.Value), Formatting.Indented));
+
+        // VARIABLES
+        var network;
+        var nodes = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(Model.Nodes, Formatting.Indented));
+        var edges = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(Model.Edges, Formatting.Indented));
+
+        // settings for network model
+        var data = {
+            nodes: nodes,
+            edges: edges,
+        };
+        var options = {
+            layout: {
+                randomSeed : 0,
+                hierarchical: {
+                    treeSpacing: 600
+                },
+            },
+            nodes: {
+                shape: "dot",
+                size: 10,
+            },
+        };
+
+        // FUNCTIONS
+        function redrawAll(nodesEdges) {
+            network = new vis.Network(container, nodesEdges, options);
+            network.on("selectNode", function (params) {
+                deleteButton.data('nodeid', params.nodes[0]);
+                distancesButton.data('nodeid', params.nodes[0]);
+                var node = data.nodes.filter(function (value, index) {
+                    if(params.nodes[0] == value.id) return true;
+                })[0];
+                //console.log(node);
+                selectedNodeLable.empty().append(node.label+' '+'<span class="badge bg-dark text-white">'+node.id +'</span>');
+                //console.log(params);
+            });
+        }
+        function deleteNode() {
+            //console.log('DELETING NODE ' + deleteButton.data('nodeid'));
+            var node = getNode();
+
+            $.ajax({
+                type: "POST",
+                url: "api/Network/Delete",
+                data: JSON.stringify({ node: node, nodes: data.nodes, edges: data.edges }),
+                success: function (result) {
+                    var deleted = result.changes.filter(function (value, index) { return value.isDeleted; });
+                    var added = result.changes.filter(function (value, index) { return value.isAdded; });
+                    deletedColumn.empty();
+                    addedColumn.empty();
+                    //console.log(result.nodes)
+                    //console.log('deleted: ' + deleted.length);
+
+                    deleted.forEach(function (value) {
+                        deletedColumn.append('<h4 style="color: red;">' + value.description + '</h3>');
+                    });
+                    added.forEach(function (value) {
+                        addedColumn.append('<h4 style="color: green">' + value.description + '</h4>');
+                    });
+
+                    data.nodes = result.nodes;
+                    data.edges = result.edges;
+                    tree = result.tree;
+                    redrawAll(data);
+                },
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+
+        function getDistances() {
+            var node = getNode();
+
+            $.ajax({
+                type: "POST",
+                url: "api/Network/GetDistances",
+                data: JSON.stringify({ node: node, nodes: data.nodes }),
+                success: function (result) {
+                    var distances = [];
+                    result.forEach(function (value) {
+                        distances.push({ from: node.label, to: findNode(value.node.id).label, distance: value.dis });
+                    });
+                    console.log(distances);
+                },
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+
+        function getRegions() {
+            var node = getNode();
+
+            $.ajax({
+                type: "POST",
+                url: "api/Network/GetRegions",
+                data: JSON.stringify({ Current: node.id, Tree: tree }),
+                success: function (result) {
+                    data.nodes.forEach(function (element, index) {
+
+                        if (result.innerRegion.includes(element.id)) {
+                            element.color = 'blue';
+                        }
+                        if (result.outerRegion.includes(element.id)) {
+                            element.color = 'green';
+                        }
+                    });
+                    redrawAll(data);
+                },
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+
+        function getNode() {
+            return findNode(deleteButton.data('nodeid'));
+        }
+
+        function findNode(id) {
+            return nodes.find(element => element.id === id);
+        }
+
+        // EVENTS
+        deleteButton.on('click', function (element, event) {
+            deleteNode();
+        });
+
+        distancesButton.on('click', function (element, event) {
+            getDistances();
+        })
+
+        regionsButton.on('click', function (element, event) {
+            getRegions();
+        });
+
+        // EXECUTE
+        redrawAll(data);
+        console.log(tree);
+    });
+</script>
